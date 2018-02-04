@@ -7,10 +7,12 @@ class DCGAN3D_D(nn.Container):
         super(DCGAN3D_D, self).__init__()
         self.ngpu = ngpu
         assert isize % 16 == 0, "isize has to be a multiple of 16"
+        # input is nc x isize x isize
+        self.input_conv = nn.Conv3d(nc, ndf//2, 4, 2, 1, bias=False)
+        self.input_lrelu = nn.LeakyReLU(0.2, inplace=True)
+        self.mm_conv = nn.Conv3d(4, ndf//2, 4, 2, 1, bias=False)
+        self.mm_lrelu = nn.LeakyReLU(0.2, inplace=True)
         main = nn.Sequential(
-            # input is nc x isize x isize
-            nn.Conv3d(nc, ndf, 4, 2, 1, bias=False),
-            nn.LeakyReLU(0.2, inplace=True),
         )
         i, csize, cndf = 3, isize / 2, ndf
 
@@ -45,10 +47,13 @@ class DCGAN3D_D(nn.Container):
         self.main = main
 
 
-    def forward(self, input):
+    def forward(self, input, mm):
         gpu_ids = None
         if isinstance(input.data, torch.cuda.FloatTensor) and self.ngpu > 1:
             gpu_ids = range(self.ngpu)
+        input = self.input_lrelu(self.input_conv(input))
+        mm = self.mm_lrelu(self.mm_conv(mm))
+        input = torch.cat([input, mm], 1)
         output = nn.parallel.data_parallel(self.main, input, gpu_ids)
         return output.view(-1, 1)
 
@@ -62,12 +67,14 @@ class DCGAN3D_G(nn.Container):
         while tisize != isize:
             cngf = cngf * 2
             tisize = tisize * 2
-
+        # input is Z, going into a convolution
+        self.input_tconv = nn.ConvTranspose3d(nz, cngf//2, 4, 1, 0, bias=False)
+        self.input_bnorm = nn.BatchNorm3d(cngf)
+        self.input_relu = nn.ReLU(True)
+        self.mm_tconv = nn.ConvTranspose3d(4, cngf//2, 4, 1, 0, bias=False)
+        self.mm_bnorm = nn.BatchNorm3d(cngf)
+        self.mm_relu = nn.ReLU(True)
         main = nn.Sequential(
-            # input is Z, going into a convolution
-            nn.ConvTranspose3d(nz, cngf, 4, 1, 0, bias=False),
-            nn.BatchNorm3d(cngf),
-            nn.ReLU(True),
         )
 
         i, csize, cndf = 3, 4, cngf
@@ -97,10 +104,13 @@ class DCGAN3D_G(nn.Container):
         main.add_module(str(i+1), nn.Tanh())
         self.main = main
 
-    def forward(self, input):
+    def forward(self, input, mm):
         gpu_ids = None
         if isinstance(input.data, torch.cuda.FloatTensor) and self.ngpu > 1:
             gpu_ids = range(self.ngpu)
+        input = self.input_relu(self.input_bnorm(self.input_tconv(input)))
+        mm = self.mm_relu(self.mm_bnorm(self.mm_tconv(mm)))
+        input = torch.cat([input, mm], 1)
         return nn.parallel.data_parallel(self.main, input, gpu_ids)
 
 class DCGAN3D_G_CPU(nn.Container):
@@ -113,12 +123,14 @@ class DCGAN3D_G_CPU(nn.Container):
         while tisize != isize:
             cngf = cngf * 2
             tisize = tisize * 2
-
+        # input is Z, going into a convolution
+        self.input_tconv = nn.ConvTranspose3d(nz, cngf, 4, 1, 0, bias=False)
+        self.input_bnorm = nn.BatchNorm3d(cngf)
+        self.input_relu = nn.ReLU(True)
+        self.mm_tconv = nn.ConvTranspose3d(4, cngf, 4, 1, 0, bias=False)
+        self.mm_bnorm = nn.BatchNorm3d(cngf)
+        self.mm_relu = nn.ReLU(True)
         main = nn.Sequential(
-            # input is Z, going into a convolution
-            nn.ConvTranspose3d(nz, cngf, 4, 1, 0, bias=True),
-            nn.BatchNorm3d(cngf),
-            nn.ReLU(True),
         )
 
         i, csize, cndf = 3, 4, cngf
@@ -148,5 +160,8 @@ class DCGAN3D_G_CPU(nn.Container):
         main.add_module(str(i+1), nn.Tanh())
         self.main = main
 
-    def forward(self, input):
+    def forward(self, input, mm):
+        input = self.input_relu(self.input_bnorm(self.input_tconv(input)))
+        mm = self.mm_relu(self.mm_bnorm(self.mm_tconv(mm)))
+        input = torch.cat([input, mm], 1)
         return self.main(input)
