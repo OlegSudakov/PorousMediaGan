@@ -74,6 +74,7 @@ nz = int(opt.nz)
 ngf = int(opt.ngf)
 ndf = int(opt.ndf)
 batch_size = int(opt.batchSize)
+imageSize = int(opt.imageSize)
 # iters = int(opt.iter_epoch)
 nc = 1
 
@@ -175,7 +176,7 @@ for epoch in range(opt.niter):
         noise.data.resize_(batch_size, nz, 1, 1, 1)
         noise.data.normal_(0, 1)
         mm_f = ms.actual_to_normal(ms.sample_n(batch_size))
-        mm_f_cube = ms.fill_cube(mm_f)
+        mm_f_cube = ms.fill_cube(mm_f, imageSize)
         mm_f = mm_f.reshape(batch_size, 4, 1, 1, 1)
         gen_mm.data.resize_(batch_size, 4, 1, 1, 1)
         gen_mm.data.fill_(mm_f)
@@ -198,7 +199,7 @@ for epoch in range(opt.niter):
             label.data.fill_(1.0) # fake labels are real for generator cost
             noise.data.normal_(0, 1)
             mm_f = ms.actual_to_normal(ms.sample_n(batch_size))
-            mm_f_cube = ms.fill_cube(mm_f)
+            mm_f_cube = ms.fill_cube(mm_f, imageSize)
             mm_f = mm_f.reshape(batch_size, 4, 1, 1, 1)
             gen_mm.data.resize_(batch_size, 4, 1, 1, 1)
             gen_mm.data.fill_(mm_f)
